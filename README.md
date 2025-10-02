@@ -1,1 +1,2 @@
 # Gold-Rush
+Gold Rush
