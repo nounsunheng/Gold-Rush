@@ -437,7 +437,9 @@
 -analyzer:"C:/Program Files/Unity/Hub/Editor/6000.2.2f1/Editor/Data/Tools/Unity.SourceGenerators/Unity.UIToolkit.SourceGenerator.dll"
 "Assets/Scripts/CameraController.cs"
 "Assets/Scripts/EnemyMovement.cs"
+"Assets/Scripts/GoldRotate.cs"
 "Assets/Scripts/PlayerController.cs"
+"Assets/Scripts/UIManager.cs"
 "Assets/TutorialInfo/Scripts/Readme.cs"
 -langversion:9.0
 /deterministic

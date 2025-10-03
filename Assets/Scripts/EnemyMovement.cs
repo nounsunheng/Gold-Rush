@@ -7,13 +7,22 @@ public class EnemyMovement : MonoBehaviour
     [SerializeField] private Transform target;
     private PlayerController playerController;
 
+    [Header("Chase")]
     [SerializeField] private float detectionRange = 30f;
     [SerializeField] private float lostRange = 35f;
     [SerializeField] private float stopRange = 3f;
 
+    [Header("Wander")]
+    [SerializeField] private float patrolRadius = 15f;
+    [SerializeField] private float patrolWaitMin = 1.5f;
+    [SerializeField] private float patrolWaitMax = 3.5f;
+    [SerializeField] private Transform wanderCenter; // optional; if null, uses spawn position
+
+    [Header("Animation")]
     [SerializeField] private string blendParam = "Blend";
     [SerializeField] private float blendDampTime = 0.1f;
 
+    [Header("Rotation")]
     [SerializeField] private bool manualRotate = true;
     [SerializeField] private float rotateSpeedDegPerSec = 540f;
 
@@ -21,7 +30,12 @@ public class EnemyMovement : MonoBehaviour
     private Animator animator;
 
     private bool isChasing;
-    private bool hasHit = false;
+    private bool hasHit;
+
+    private Vector3 spawnPosition;
+    private float nextPatrolTime;
+    private Vector3 currentPatrolPoint;
+    private bool hasPatrolPoint;
 
     private void Awake()
     {
@@ -29,6 +43,7 @@ public class EnemyMovement : MonoBehaviour
         animator = GetComponentInChildren<Animator>();
         agent.stoppingDistance = stopRange;
         agent.updateRotation = !manualRotate;
+        spawnPosition = transform.position;
     }
 
     private void Start()
@@ -38,21 +53,28 @@ public class EnemyMovement : MonoBehaviour
             playerController = FindObjectOfType<PlayerController>();
             if (playerController != null) target = playerController.transform;
         }
+        ScheduleNextPatrol();
     }
 
     private void Update()
     {
-        if (agent == null || target == null) 
+        if (agent == null)
         {
             SetBlend(0f);
+            return;
+        }
+
+        if (target == null)
+        {
+            DoWander();
             return;
         }
 
         Vector3 toTarget = target.position - agent.transform.position;
         float sqrDist = toTarget.sqrMagnitude;
         float detectSqr = detectionRange * detectionRange;
-        float lostSqr   = lostRange * lostRange;
-        float stopSqr   = stopRange * stopRange;
+        float lostSqr = lostRange * lostRange;
+        float stopSqr = stopRange * stopRange;
 
         if (!isChasing)
         {
@@ -63,7 +85,7 @@ public class EnemyMovement : MonoBehaviour
             if (sqrDist >= lostSqr) isChasing = false;
         }
 
-        if (isChasing && !hasHit)
+        if (!hasHit && isChasing)
         {
             if (sqrDist > stopSqr)
             {
@@ -73,6 +95,10 @@ public class EnemyMovement : MonoBehaviour
             {
                 agent.ResetPath();
             }
+        }
+        else if (!isChasing)
+        {
+            DoWander();
         }
         else
         {
@@ -84,8 +110,7 @@ public class EnemyMovement : MonoBehaviour
 
         if (manualRotate)
         {
-            Vector3 vel = agent.velocity;
-            vel.y = 0f;
+            Vector3 vel = agent.velocity; vel.y = 0f;
             if (vel.sqrMagnitude > 0.0001f)
             {
                 Quaternion targetRot = Quaternion.LookRotation(vel.normalized, Vector3.up);
@@ -94,11 +119,55 @@ public class EnemyMovement : MonoBehaviour
         }
     }
 
+    private void DoWander()
+    {
+        if (Time.time >= nextPatrolTime || !hasPatrolPoint || ReachedDestination())
+        {
+            Vector3 center = wanderCenter ? wanderCenter.position : spawnPosition;
+            hasPatrolPoint = TryGetRandomPoint(center, patrolRadius, out currentPatrolPoint);
+            if (hasPatrolPoint) agent.SetDestination(currentPatrolPoint);
+            ScheduleNextPatrol();
+        }
+    }
+
+    private bool ReachedDestination()
+    {
+        if (agent.pathPending) return false;
+        if (agent.remainingDistance > Mathf.Max(0.1f, agent.stoppingDistance)) return false;
+        if (agent.hasPath && agent.velocity.sqrMagnitude > 0.01f) return false;
+        return true;
+    }
+
+    private void ScheduleNextPatrol()
+    {
+        nextPatrolTime = Time.time + Random.Range(patrolWaitMin, patrolWaitMax);
+    }
+
+    private bool TryGetRandomPoint(Vector3 center, float radius, out Vector3 result)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            Vector3 random = center + Random.insideUnitSphere * radius;
+            if (NavMesh.SamplePosition(random, out NavMeshHit hit, 2.0f, NavMesh.AllAreas))
+            {
+                result = hit.position;
+                return true;
+            }
+        }
+        result = center;
+        return false;
+    }
+
     private void OnTriggerEnter(Collider other)
     {
-        if (!hasHit && other.CompareTag("player"))
+        if (!hasHit && other.CompareTag("Player"))
         {
             hasHit = true;
+            Debug.Log($"{gameObject.name} Hit Player");
+        }
+        else if (!hasHit && other.CompareTag("Gold"))
+        {
+            // hasHit = true;
             Debug.Log($"{gameObject.name} Hit Player");
         }
     }
@@ -107,6 +176,7 @@ public class EnemyMovement : MonoBehaviour
     {
         if (agent != null) agent.stoppingDistance = stopRange;
         if (lostRange < detectionRange) lostRange = detectionRange + 1f;
+        if (patrolWaitMax < patrolWaitMin) patrolWaitMax = patrolWaitMin;
     }
 
     private void SetBlend(float value)
@@ -122,6 +192,6 @@ public class EnemyMovement : MonoBehaviour
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, stopRange);
         Gizmos.color = Color.gray;
-        Gizmos.DrawWireSphere(transform.position, lostRange);
+        Gizmos.DrawWireSphere(wanderCenter ? wanderCenter.position : (Application.isPlaying ? spawnPosition : transform.position), patrolRadius);
     }
 }
